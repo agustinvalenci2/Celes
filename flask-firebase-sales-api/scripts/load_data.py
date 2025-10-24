@@ -14,7 +14,7 @@ MAX_WORKERS = 4
 
 
 def initialize_firebase():
-    """Inicializa la conexión con Firebase usando FIREBASE_CREDENTIALS_PATH."""
+    """Initializes the Firebase connection using FIREBASE_CREDENTIALS_PATH."""
     load_dotenv()
     cred_path = os.getenv(
         "FIREBASE_CREDENTIALS_PATH",
@@ -26,16 +26,16 @@ def initialize_firebase():
         )
     if not os.path.exists(cred_path):
         raise FileNotFoundError(
-            f"No se encontró el archivo de credenciales: {cred_path}"
+            f"Credentials file not found: {cred_path}"
         )
     cred = credentials.Certificate(cred_path)
     if not firebase_admin._apps:
         firebase_admin.initialize_app(cred)
-    print("Firebase inicializado")
+    print("Firebase initialized")
 
 
 def find_parquet_files(data_folder):
-    """Lista archivos parquet en la carpeta data."""
+    """Lists parquet files in the data folder."""
     return [
         f
         for f in os.listdir(data_folder)
@@ -44,7 +44,7 @@ def find_parquet_files(data_folder):
 
 
 def sanitize_doc_id(value: str) -> str:
-    """Sanitiza el ID del documento para Firestore."""
+    """Sanitizes the document ID for Firestore."""
     if not value:
         return None
     doc_id = re.sub(r"[^\w\-_.]", "_", str(value))
@@ -52,7 +52,7 @@ def sanitize_doc_id(value: str) -> str:
 
 
 def to_timestamp(value):
-    """Convierte a datetime compatible con Firestore."""
+    """Converts to datetime compatible with Firestore."""
     if value is None or pd.isna(value):
         return None
     if isinstance(value, pd.Timestamp):
@@ -75,22 +75,20 @@ def to_timestamp(value):
 
 
 def normalize_for_firestore(obj):
-    """Normaliza recursivamente estructuras para Firestore de forma optimizada."""
-    # Manejo rápido de NaN/None
+    """Recursively normalizes structures for Firestore in an optimized way."""
+
     if obj is None or (isinstance(obj, float) and np.isnan(obj)):
         return None
 
-    # Tipos numpy
+
     if isinstance(obj, (np.integer, np.floating)):
         return obj.item()
     if isinstance(obj, np.ndarray):
         return obj.tolist()
-
-    # Fechas
     if isinstance(obj, (pd.Timestamp, datetime, date)):
         return to_timestamp(obj)
 
-    # Colecciones
+
     if isinstance(obj, dict):
         return {k: normalize_for_firestore(v) for k, v in obj.items()}
     if isinstance(obj, (list, tuple)):
@@ -100,10 +98,9 @@ def normalize_for_firestore(obj):
 
 
 def extract_top_keys(rec: dict) -> dict:
-    """Asegura claves top y normaliza fechas y tipos para Firestore."""
+    """Ensures top keys and normalizes dates and types for Firestore."""
     out = {}
 
-    # Normalizar solo los campos necesarios
     for key, value in rec.items():
         if key in ("KeyDate", "Datetime") or (
             key == "Time" and isinstance(value, dict)
@@ -125,7 +122,7 @@ def extract_top_keys(rec: dict) -> dict:
 
 
 def process_batch(batch_records, collection_name, batch_num):
-    """Procesa un batch de registros."""
+    """Processes a batch of records."""
     db = firestore.client()
     batch = db.batch()
 
@@ -138,12 +135,11 @@ def process_batch(batch_records, collection_name, batch_num):
 
 
 def load_to_firestore(df: pd.DataFrame, collection_name: str = "sales"):
-    """Carga un DataFrame a Firestore en batches paralelos."""
-    # Convertir todo el DataFrame de una vez
+    """Loads a DataFrame to Firestore in parallel batches."""
     records = df.to_dict("records")
     total = len(records)
 
-    # Preparar batches
+
     batches = []
     current_batch = []
 
@@ -166,8 +162,7 @@ def load_to_firestore(df: pd.DataFrame, collection_name: str = "sales"):
     if current_batch:
         batches.append(current_batch)
 
-    # Procesar batches en paralelo
-    print(f"  Procesando {len(batches)} batches en paralelo...")
+    print(f"  Processing {len(batches)} batches in parallel...")
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
         futures = [
             executor.submit(process_batch, batch, collection_name, i)
@@ -179,24 +174,24 @@ def load_to_firestore(df: pd.DataFrame, collection_name: str = "sales"):
             count, batch_num = future.result()
             completed += count
             print(
-                f"  Progreso: {completed}/{total} documentos ({(completed/total)*100:.1f}%)"
+                f"  Progress: {completed}/{total} documents ({(completed/total)*100:.1f}%)"
             )
 
 
 def show_data_preview(data_folder):
-    """Muestra primeras filas y columnas de cada archivo en data."""
+    """Shows first rows and columns of each file in data."""
     files = find_parquet_files(data_folder)
     if not files:
-        print("No se encontraron archivos .parquet en la carpeta de datos")
+        print("No .parquet files found in the data folder")
         return
-    print("\n=== VISTA PREVIA DE DATOS ===")
+    print("\n=== DATA PREVIEW ===")
     for fname in files:
         fpath = os.path.join(data_folder, fname)
         df = pd.read_parquet(fpath)
-        print(f"\nArchivo: {fname}")
-        print(f"  Registros: {len(df)}")
-        print(f"  Columnas: {list(df.columns)}")
-        print("  Primeras filas:")
+        print(f"\nFile: {fname}")
+        print(f"  Records: {len(df)}")
+        print(f"  Columns: {list(df.columns)}")
+        print("  First rows:")
         print(df.head(3))
         print("=" * 60)
 
@@ -208,7 +203,7 @@ def main():
 
     args = sys.argv[1:]
     if "--help" in args or "-h" in args:
-        print("Uso:")
+        print("Usage:")
         print("  python scripts\\load_data.py --preview")
         print("  python scripts\\load_data.py [--collection sales]")
         sys.exit(0)
@@ -221,25 +216,25 @@ def main():
         try:
             collection = args[args.index("--collection") + 1]
         except Exception:
-            print("Valor inválido para --collection, usando 'sales'.")
+            print("Invalid value for --collection, using 'sales'.")
 
-    print("=== INICIANDO CARGA DE DATOS A FIRESTORE ===")
+    print("=== STARTING DATA LOAD TO FIRESTORE ===")
     initialize_firebase()
 
     files = find_parquet_files(data_folder)
     if not files:
-        print("No se encontraron archivos .parquet en la carpeta data")
+        print("No .parquet files found in the data folder")
         sys.exit(1)
 
     for fname in files:
         fpath = os.path.join(data_folder, fname)
-        print(f"\nCargando: {fname}")
+        print(f"\nLoading: {fname}")
         df = pd.read_parquet(fpath)
-        print(f"  Registros: {len(df)}  |  Columnas: {len(df.columns)}")
+        print(f"  Records: {len(df)}  |  Columns: {len(df.columns)}")
         load_to_firestore(df, collection_name=collection)
-        print(f"✓ Archivo {fname} cargado en colección '{collection}'")
+        print(f"File {fname} loaded to collection '{collection}'")
 
-    print("\n✓ Proceso completado")
+    print("\nProcess completed")
 
 
 if __name__ == "__main__":
